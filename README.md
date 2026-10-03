@@ -1,6 +1,6 @@
-# CET-6 Words
+# WORDS
 
-原生 HTML / CSS / JavaScript 的个人背词 PWA，无构建步骤、无 npm 依赖、无业务后端。
+通用个人背词 App，使用原生 HTML / CSS / JavaScript，支持 PWA，无构建步骤、无 npm 依赖、无业务后端。
 
 ## 本地启动
 
@@ -34,7 +34,7 @@ HTML 资源、示例词库读取和 Service Worker 注册均使用相对路径�
 
 - IndexedDB 数据库 `cet6-words`：`words` 保存词典与进度，`days` 保存每日记录，`meta` 保存初始化标记和可续学的当天队列。
 - localStorage 的 `cet6-settings` 仅保存每日新词数、自动发音和手势开关。
-- Cache Storage 的 `cet6-shell-v9` 保存离线静态资源。
+- Cache Storage 的 `cet6-shell-v12` 保存离线静态资源。
 - 不同设备、浏览器及网站地址（协议 / 主机 / 端口）各有独立数据。切换地址前先导出 JSON，再在新地址恢复。
 - 「我的 → 导出完整学习数据」备份词库、进度、每日记录、队列、设置和连续学习数据。连续天数按每日记录计算。
 - 导出在同一个只读事务里读取完整快照；恢复前检查有效日期、每日统计、队列和可选字段。确认后在一个 IndexedDB 事务中覆盖词库、统计与队列；设置不可写时取消恢复，事务失败时回滚设置。清空进度需要两次确认，保留词库和收藏。
@@ -46,7 +46,26 @@ JSON 词库是数组，参考 `sample-words.json`。CSV 表头为 `word,phonetic
 
 文件导入会严格检查 UTF-8 编码，避免把 GBK 等编码静默读成乱码。Excel 导出的 CSV 请选择「CSV UTF-8」格式。
 
-CSV / JSON 还支持三个可选字段：`frequency`（非负数字，缺失或空白为 `null`）、`level`、`source`（文本，缺失为 `""`）。CSV 中的词频数字会转为数值，`0` 是有效值。旧词库和旧备份无需补字段，也无需升级 IndexedDB。新字段参与导出 / 恢复；重复导入只补空值，不覆盖已有元数据或学习进度。当前 UI 和背词规则不使用这三个字段。
+CSV / JSON 还支持三个可选字段：`frequency`（非负数字，缺失或空白为 `null`）、`level`、`source`（文本，缺失为 `""`）。CSV 中的词频数字会转为数值，`0` 是有效值。旧词库和旧备份无需补字段，也无需升级 IndexedDB。这三个字段参与导出 / 恢复；重复导入只补空值，不覆盖已有值或学习进度。学习算法不使用这三个字段，页面用 level 判断是否显示六级星级，不显示 frequency/source。
+
+增强词库还支持可选 `pos`（来源标注的词性）、`definition`（英文释义）、`importance`（1–5 整数，缺失为 `null`）、`importanceReason`（档位说明）、`corePos`、`coreMeaning`。文本缺失为空字符串，CSV/JSON 导入和完整备份均支持。重复导入可以更新这些非空增强字段；音标只补空缺，完整中文释义仅接受保留原文并追加的补充。含有非空 corePos/coreMeaning 且同时提供非空 example/exampleZh 的清洗词包，可以成对修正原有例句；普通旧词包仍只补空例句，不能将旧例句重新覆盖到 v2。导入忽略输入中的学习进度字段，原有 mastery、reviewCount、lastReview、nextReview、favorite、createdAt、每日记录与学习队列保持不变。
+
+学习页显示非空音标、与核心义对应的词性（旧词包显示原词性），以及仅对 `level=cet6` 显示的“六级重要度”星级；显示答案后优先呈现 corePos/coreMeaning（旧词包按来源换行显示中文释义）、非空双语例句和掌握状态。英文 definition 保存在词库和备份中，不增加学习页的信息负担。页面不显示原始词频。
+
+### 本地 ECDICT 增强
+
+`tools/enrich_cet_vocab.py` 仅使用标准库，流式读取 ECDICT CSV，忽略大小写精确匹配，不做模糊匹配。此版 ECDICT 的 `pos` 列为空时，从 translation/definition 中已有的明确词性标记提取；不猜测词性。仅对不超过 8 个汉字且没有词性结构的原中文释义追加来源翻译的一般义项（保留明确词性标记的行，略去 [医]/[经] 等专业标签行），原释义保留在第一行。ECDICT 的英文/中文换行标记转换为实际换行。
+
+六级星级仅基于输入 CET6 增量词自身的真实词频：设 `L` 为词频严格小于当前词的词数，`N` 为总词数，`importance = min(5, 1 + floor(5 * L / N))`。同频同星，词频上升时星级不会下降；并列频率不会人为拆组，因此五档数量不一定相等。与 Collins、BNC 星级或词频无关。本批 1253 词对应范围：1 星 0–1，2 星 2–4，3 星 5–7，4 星 8–12，5 星 13–145。
+
+例句输入为本地原创双语文件，每行 `word|example|exampleZh`。脚本检查 8–18 个英文词、目标词或 ECDICT 明确记载的词形、双语非空和句子唯一。语法自然度与翻译准确性由编写审校负责，自动检查不能证明语义正确。第三方词库及原创例句文件均保存在被 Git 忽略的 `local-data/`，不加入 App 资源或离线缓存。
+
+```powershell
+python -B tools/enrich_cet_vocab.py local-data/cet6_incremental.json local-data/ecdict.csv local-data/original_examples.txt local-data/cet6_incremental_enriched.json
+node local-data/validate_enriched_import.cjs
+```
+
+输出另存，不覆盖原词包，并生成 `.report.json` 与 `.unmatched.json`。来源版本与许可证说明见本地 `local-data/SOURCE.md`。更新后的 App 部署并刷新成功后，再手动导入增强词包；旧版 App 会忽略新字段。
 
 ### 外部词库转换
 
@@ -76,7 +95,7 @@ node tools/test-service-worker.cjs
 python -B -m unittest discover -s tools -p 'test_*.py'
 ```
 
-`tests.cjs` 使用内存事务替身检查学习队列、当天重复、复习间隔、每日去重、CSV / JSON 解析、重复导入、导出内容与恢复往返、无效备份拒绝及进度重置。`tools/test-service-worker.cjs` 检查版本缓存的一致性、安装绕过 HTTP 旧缓存、离线资源、失败更新保护、缓存隔离及图标规格。Python 的 11 项测试包含 5000 词转换、例句对应、重复词元数据、异常输入及输出失败保护。
+`tests.cjs` 使用内存事务替身检查学习队列、当天重复、复习间隔、每日去重、CSV / JSON 解析、重复导入、导出内容与恢复往返、无效备份拒绝及进度重置；也检查增强字段 JSON/CSV 保存、增强后全部学习字段保护、新旧备份兼容、星级校验与空区域隐藏。`tools/test-service-worker.cjs` 检查版本缓存的一致性、安装绕过 HTTP 旧缓存、离线资源、失败更新保护、缓存隔离及图标规格。Python 的 21 项测试包含 5000 词转换、中文源字段、例句对应、重复词元数据、异常输入、输出失败保护，以及来源词性、星级单调性和并列一致性、合理词形与增强字段映射。
 
 真实 IndexedDB 集成检查使用单独测试地址：
 
@@ -99,3 +118,19 @@ python -m http.server 8011 --bind 127.0.0.1
 修改静态资源后，发布时更新 service-worker.js 的缓存版本。每次启动主动调用 `registration.update()` 检查更新。每个版本安装时缓存完整资源集，使用 `cache: reload` 绕过 HTTP 旧缓存，激活后仅删除本 App 的旧版本缓存。页面与核心资源使用同一版本缓存，离线和弱网无需等待网络超时；更新成功后提示刷新，不在学习中强制刷新。HTTPS 托管时建议 `service-worker.js` 使用 `Cache-Control: no-cache`，App 也已设置 `updateViaCache: none`。
 
 Safari 与主屏幕独立 App 的安装、存储迁移、自动发音权限、真实滑动和系统安全区域仍需在 iPhone / iPad 验证。浏览器本地存储不能替代外部备份，系统清理或存储压力仍可能删除数据；参见 [WebKit 存储策略](https://webkit.org/blog/14403/updates-to-storage-policy/)。
+
+
+## 核心义 v2
+
+背词答案优先使用可选 corePos/coreMeaning；缺失时仍显示原 meaning。现有单词详情保留完整 pos/meaning，并显示非空英文 definition。样式与学习调度不变。
+
+`tools/clean_cet_vocab.py` 读取原 CET 词包、v1、ECDICT 精确匹配记录、完整核心义编辑表、双语例句修改和疑似污染复核表，另存 v2。拒绝未知词、缺失核心义、无来源词性、未复核疑点、过长或缺词例句、避用模板及覆盖输入。星级、音标和完整义项不变。清洗细节、来源许可、复核结果与再生成命令见私有 `local-data/SOURCE.md`；`local-data/` 继续忽略，不上传 Pages。
+
+测试新增 `python -B -m unittest discover -s tools -p 'test_*.py'`（含清洗检查），`node tests.cjs` 验证 core JSON/CSV/备份、修正例句成对更新、旧词包不回退、核心学习/完整详情展示及所有学习字段保留。真实浏览器测试仅在 localhost:8011 的可丢弃数据库进行。
+
+
+## 品牌与当前词书
+
+App 品牌、HTML title、manifest name/short_name 和 Apple 主屏幕建议名称统一为 WORDS；副标语为“每天一点，慢慢记住。”。首页“当前词书”是展示文本，默认 CET-6 六级词汇。在 app.js 顶部配置 APP_CONFIG.activeBookName，可改为 CET-4 四级词汇等名称；本次没有增加词书切换或筛选功能，配置不进入学习设置或 IndexedDB。
+
+仓库与 Pages 路径继续使用 /CET-6/。IndexedDB 名称 cet6-words、数据库版本/对象仓库、localStorage 键 cet6-settings、备份 format cet6-backup 与缓存前缀均保留，以兼容旧学习数据及备份。缓存更新至 v12，发布后联网打开、等待更新完成再刷新即可更新页面。iPad 已安装的主屏幕名称可能保留添加时的名称，无法承诺随网页刷新自动更名；新添加时建议名称为 WORDS，用户也可在添加界面自定义名称。

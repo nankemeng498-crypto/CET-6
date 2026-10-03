@@ -1,6 +1,8 @@
 'use strict';
 const $ = s => document.querySelector(s);
 const LABELS = ['陌生', '初识', '模糊', '熟悉', '已掌握'];
+// 展示用词书名称配置；不改变词库、学习设置或存储键。
+const APP_CONFIG = {activeBookName:'CET-6 六级词汇'};
 const DEFAULTS = {dailyNew:40, autoSpeak:false, gestures:false};
 let settings = {...DEFAULTS}, db, words = [], records = [], session = null, revealed = false, busy = false, listLimit = 80;
 let savedSettings, visibleDay = day(), refreshPending = false, clockTimer, utterance = null, appReady = false;
@@ -80,7 +82,7 @@ function home() {
   p.fresh=[...pending.values()].filter(isNew);p.reviews=[...pending.values()].filter(w=>!isNew(w));p.weak=[];
   const remaining=pending.size;
   const percent = r.completedWords + remaining ? Math.round(r.completedWords/(r.completedWords+remaining)*100) : 0;
-  return `<div class="eyebrow">YOUR DAILY PRACTICE</div><h1>CET-6 · 550+</h1><p class="muted">把每一天的小进步，变成考场上的底气。</p><section class="panel"><div class="row"><h2>今日任务</h2><span class="caption">${new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric'})}</span></div><div class="metrics"><div class="metric"><strong>${p.reviews.length+p.weak.length}</strong><span>今日待复习</span></div><div class="metric"><strong>${p.fresh.length}</strong><span>今日新词</span></div><div class="metric"><strong>${r.completedWords}</strong><span>今日已完成</span></div></div><div class="row caption"><span>今日进度</span><span>${percent}%</span></div><progress value="${percent}" max="100"></progress><button class="primary wide" data-action="start">${session?.queue.length ? '继续今日学习' : '开始今日学习'} <span aria-hidden="true">→</span></button></section><div class="overview"><div class="stat"><span>连续学习</span><strong>${streak()} 天</strong></div><div class="stat"><span>当前总词数</span><strong>${words.length}</strong></div>${[0,2,3,4].map(n=>`<div class="stat"><span>${LABELS[n]}词</span><strong>${words.filter(w=>w.mastery===n).length}</strong></div>`).join('')}</div><p class="tip">先回忆，再看答案。记不住的词，今天还会再见。<br>内置 20 个示例词，可在「我的」导入自己的词库。</p>`;
+  return `<div class="eyebrow">YOUR DAILY PRACTICE</div><h1>WORDS</h1><p class="muted">每天一点，慢慢记住。</p><p class="caption">当前词书：${esc(APP_CONFIG.activeBookName)}</p><section class="panel"><div class="row"><h2>今日任务</h2><span class="caption">${new Date().toLocaleDateString('zh-CN',{month:'long',day:'numeric'})}</span></div><div class="metrics"><div class="metric"><strong>${p.reviews.length+p.weak.length}</strong><span>今日待复习</span></div><div class="metric"><strong>${p.fresh.length}</strong><span>今日新词</span></div><div class="metric"><strong>${r.completedWords}</strong><span>今日已完成</span></div></div><div class="row caption"><span>今日进度</span><span>${percent}%</span></div><progress value="${percent}" max="100"></progress><button class="primary wide" data-action="start">${session?.queue.length ? '继续今日学习' : '开始今日学习'} <span aria-hidden="true">→</span></button></section><div class="overview"><div class="stat"><span>连续学习</span><strong>${streak()} 天</strong></div><div class="stat"><span>当前总词数</span><strong>${words.length}</strong></div>${[0,2,3,4].map(n=>`<div class="stat"><span>${LABELS[n]}词</span><strong>${words.filter(w=>w.mastery===n).length}</strong></div>`).join('')}</div><p class="tip">先回忆，再看答案。记不住的词，今天还会再见。<br>内置 20 个示例词，可在「我的」导入自己的词库。</p>`;
 }
 async function start() {
   return withWrite(async()=>{
@@ -97,11 +99,27 @@ async function start() {
   });
 }
 function autoSpeak() { if (settings.autoSpeak && session?.date===day() && session.queue.length && location.hash==='#study') speak(session.queue[0]); }
+function importanceHTML(w) {
+  return w.level?.toLowerCase()==='cet6'&&Number.isInteger(w.importance)&&w.importance>=1&&w.importance<=5 ? `<div class="importance" aria-label="六级重要度 ${w.importance} 星"><span aria-hidden="true">${'★'.repeat(w.importance)}${'☆'.repeat(5-w.importance)}</span><small>六级重要度</small></div>` : '';
+}
+function wordMetadata(w,full=false) {
+  // 核心词性随答案一起呈现，避免展示全量词典词性或重复占据屏幕。
+  const pos=full?w.pos:w.coreMeaning?.trim()?'':w.corePos||w.pos;
+  return `${w.phonetic?.trim()?`<div class="phonetic">${esc(w.phonetic)}</div>`:''}${pos?.trim()?`<div class="word-pos">${esc(pos)}</div>`:''}${importanceHTML(w)}`;
+}
+function meaningHTML(w,full=false) {
+  // 仅按来源已有的换行排版；不将未标注的中文意思猜配给某个词性。
+  const meaning=!full&&w.coreMeaning?.trim()?`${w.corePos?.trim()?w.corePos+' ':''}${w.coreMeaning}`:w.meaning;
+  return meaning.split(/\r?\n/).filter(line=>line.trim()).map(line=>`<div class="meaning-line">${esc(line)}</div>`).join('');
+}
+function answerHTML(w,full=false) {
+  return `<div class="answer"><div class="meaning">${meaningHTML(w,full)}</div>${w.example?.trim()?`<p class="example" lang="en">${esc(w.example)}</p>`:''}${w.exampleZh?.trim()?`<p class="muted example-zh">${esc(w.exampleZh)}</p>`:''}${full&&w.definition?.trim()?`<div class="dictionary-definition"><span class="caption">英文释义 · 完整词典义项</span><p class="example" lang="en">${esc(w.definition)}</p></div>`:''}<span class="badge">当前状态 · ${LABELS[w.mastery]}</span></div>`;
+}
 function study() {
   const waiting=words.some(w=>w.nextReview&&Date.parse(w.nextReview)>Date.now()&&Date.parse(w.nextReview)<=Date.now()+10*60000);
   if (!session || session.date !== day() || !session.queue.length) return `<div class="eyebrow">ONE WORD AT A TIME</div><h1>留一点时间，给记忆。</h1><section class="panel empty"><p>${session?.answered ? waiting?'本轮暂告一段落，稍后可再练未记住的词。':'本轮学习完成，做得不错。' : '准备好开始今天的学习了吗？'}</p><button class="primary wide" data-action="start">开始今日学习</button></section><p class="tip">到期复习优先，其次是容易遗忘的词，最后是新词。</p>`;
   const w = words.find(w=>w.word===session.queue[0]); if (!w) return '<p>词库记录缺失，请重新开始学习。</p>';
-  return `<div class="study-head row"><span class="caption">今日学习</span><strong>${session.answered+1} / ${session.answered+session.queue.length}</strong></div><progress value="${session.answered}" max="${session.answered+session.queue.length}"></progress><section id="word-card" class="panel word-card ${revealed?'revealed':''}"><div id="gesture-zone" class="${settings.gestures&&revealed?'gesture-surface':''}"><span class="badge">${w.reviewCount?'复习单词':'新单词'}</span><h1 class="word">${esc(w.word)}</h1><div class="phonetic">${esc(w.phonetic)}</div><div class="word-tools"><button class="icon" data-action="speak" data-word="${esc(w.word)}" aria-label="朗读单词">♪</button><button class="icon" data-action="favorite" data-word="${esc(w.word)}" aria-label="${w.favorite?'取消收藏':'收藏单词'}" aria-pressed="${w.favorite}">${w.favorite?'★':'☆'}</button></div></div>${revealed?`<div class="answer"><div class="meaning">${esc(w.meaning)}</div><p class="example">${esc(w.example)}</p><p class="muted">${esc(w.exampleZh)}</p><span class="badge">当前状态 · ${LABELS[w.mastery]}</span></div>`:'<p class="tip">想一想，它是什么意思？</p>'}</section><p class="caption" style="text-align:center">${settings.gestures?'答案显示后：左滑不认识 · 上滑模糊 · 右滑认识':'按自己的记忆情况选择，不用急。'}</p><div class="actions"><div class="actions-inner">${revealed?'<button class="unknown" data-answer="0">不认识</button><button class="fuzzy" data-answer="1">模糊</button><button class="primary" data-answer="2">认识</button>':'<button class="primary" data-action="reveal">显示答案</button>'}</div></div>`;
+  return `<div class="study-head row"><span class="caption">今日学习</span><strong>${session.answered+1} / ${session.answered+session.queue.length}</strong></div><progress value="${session.answered}" max="${session.answered+session.queue.length}"></progress><section id="word-card" class="panel word-card ${revealed?'revealed':''}"><div id="gesture-zone" class="${settings.gestures&&revealed?'gesture-surface':''}"><span class="badge">${w.reviewCount?'复习单词':'新单词'}</span><h1 class="word">${esc(w.word)}</h1>${wordMetadata(w)}<div class="word-tools"><button class="icon" data-action="speak" data-word="${esc(w.word)}" aria-label="朗读单词">♪</button><button class="icon" data-action="favorite" data-word="${esc(w.word)}" aria-label="${w.favorite?'取消收藏':'收藏单词'}" aria-pressed="${w.favorite}">${w.favorite?'★':'☆'}</button></div></div>${revealed?answerHTML(w):'<p class="tip">想一想，它是什么意思？</p>'}</section><p class="caption" style="text-align:center">${settings.gestures?'答案显示后：左滑不认识 · 上滑模糊 · 右滑认识':'按自己的记忆情况选择，不用急。'}</p><div class="actions"><div class="actions-inner">${revealed?'<button class="unknown" data-answer="0">不认识</button><button class="fuzzy" data-answer="1">模糊</button><button class="primary" data-answer="2">认识</button>':'<button class="primary" data-action="reveal">显示答案</button>'}</div></div>`;
 }
 async function answer(value) {
   if (busy || !revealed || !session?.queue.length || ![0,1,2].includes(value)) return;
@@ -137,7 +155,7 @@ function updateList() {
 }
 function detail(id) {
   const w = words.find(w=>w.word===id); if (!w) return '<p>没有找到这个单词。</p>';
-  return `<button class="quiet back" data-action="back">← 返回词库</button><section class="panel"><h1 class="word">${esc(w.word)}</h1><p class="phonetic">${esc(w.phonetic)}</p><div class="row"><button data-action="speak" data-word="${esc(w.word)}">♪ 发音</button><button data-action="favorite" data-word="${esc(w.word)}">${w.favorite?'★ 已收藏':'☆ 收藏'}</button></div><div class="answer"><p class="meaning">${esc(w.meaning)}</p><p>${esc(w.example)}</p><p class="muted">${esc(w.exampleZh)}</p></div><div class="setting"><label>掌握等级<select id="mastery" data-word="${esc(w.word)}">${LABELS.map((l,i)=>`<option value="${i}" ${w.mastery===i?'selected':''}>${l}</option>`).join('')}</select></label></div><div class="detail-info"><div><span>复习次数</span>${w.reviewCount}</div><div><span>收藏</span>${w.favorite?'是':'否'}</div><div><span>上次复习</span>${dateText(w.lastReview)}</div><div><span>下次复习</span>${dateText(w.nextReview)}</div></div></section>`;
+  return `<button class="quiet back" data-action="back">← 返回词库</button><section class="panel"><h1 class="word">${esc(w.word)}</h1>${wordMetadata(w,true)}<div class="row"><button data-action="speak" data-word="${esc(w.word)}">♪ 发音</button><button data-action="favorite" data-word="${esc(w.word)}">${w.favorite?'★ 已收藏':'☆ 收藏'}</button></div>${answerHTML(w,true)}<div class="setting"><label>掌握等级<select id="mastery" data-word="${esc(w.word)}">${LABELS.map((l,i)=>`<option value="${i}" ${w.mastery===i?'selected':''}>${l}</option>`).join('')}</select></label></div><div class="detail-info"><div><span>复习次数</span>${w.reviewCount}</div><div><span>收藏</span>${w.favorite?'是':'否'}</div><div><span>上次复习</span>${dateText(w.lastReview)}</div><div><span>下次复习</span>${dateText(w.nextReview)}</div></div></section>`;
 }
 function me() {
   const r = todayRecord(), week = records.filter(r=>r.date>=shiftDay(-6)&&r.date<=day()).reduce((sum,r)=>sum+r.completedWords,0);
@@ -230,7 +248,9 @@ function normalizeWord(w,full=false) {
   // 可选词库元数据：旧词库缺失时使用空值，CSV 数值转为数字。
   const rawFrequency=w.frequency, frequency=rawFrequency==null || typeof rawFrequency==='string'&&!rawFrequency.trim() ? null : Number(rawFrequency);
   if(frequency!==null&&(!['string','number'].includes(typeof rawFrequency)||!Number.isFinite(frequency)||frequency<0))throw new Error('frequency 必须为非负数字或空值');
-  const out={word:w.word.trim().toLowerCase(),phonetic:optionalText(w.phonetic,'phonetic'),meaning:w.meaning.trim(),example:optionalText(w.example,'example'),exampleZh:optionalText(w.exampleZh,'exampleZh'),frequency,level:optionalText(w.level,'level',true),source:optionalText(w.source,'source'),mastery:0,reviewCount:0,lastReview:null,nextReview:null,favorite:false,createdAt:new Date().toISOString()};
+  const importance=w.importance==null||typeof w.importance==='string'&&!w.importance.trim()?null:Number(w.importance);
+  if(importance!==null&&(!['number','string'].includes(typeof w.importance)||!Number.isInteger(importance)||importance<1||importance>5))throw new Error('importance 必须为 1–5 的整数或空值');
+  const out={word:w.word.trim().toLowerCase(),phonetic:optionalText(w.phonetic,'phonetic'),meaning:w.meaning.trim(),example:optionalText(w.example,'example'),exampleZh:optionalText(w.exampleZh,'exampleZh'),frequency,level:optionalText(w.level,'level',true),source:optionalText(w.source,'source'),pos:optionalText(w.pos,'pos'),definition:optionalText(w.definition,'definition'),importance,importanceReason:optionalText(w.importanceReason,'importanceReason'),corePos:optionalText(w.corePos,'corePos'),coreMeaning:optionalText(w.coreMeaning,'coreMeaning'),mastery:0,reviewCount:0,lastReview:null,nextReview:null,favorite:false,createdAt:new Date().toISOString()};
   if(full){if(!Number.isInteger(w.mastery)||w.mastery<0||w.mastery>4||!Number.isSafeInteger(w.reviewCount)||w.reviewCount<0||typeof w.favorite!=='boolean')throw new Error('备份中的学习进度格式无效');Object.assign(out,{mastery:w.mastery,reviewCount:w.reviewCount,lastReview:normalizeDate(w.lastReview),nextReview:normalizeDate(w.nextReview),favorite:w.favorite,createdAt:normalizeDate(w.createdAt)||out.createdAt});if(w.reviewCount>0&&(!out.lastReview||!out.nextReview))throw new Error('已学习单词缺少复习日期');}
   return out;
 }
@@ -241,8 +261,18 @@ function mergeDictionary(old,incoming) {
   let changed=false;
   const fill=k=>{if((old[k]==null||typeof old[k]==='string'&&!old[k].trim())&&old[k]!==incoming[k]){old[k]=incoming[k];changed=true;}};
   ['phonetic','meaning','frequency','level','source'].forEach(fill);
+  // 增强字段可以更新；空字段不抹除已有内容。学习字段始终不参与合并。
+  for(const k of ['pos','definition','importance','importanceReason','corePos','coreMeaning']){
+    if(incoming[k]!=null&&incoming[k]!==''&&old[k]!==incoming[k]){old[k]=incoming[k];changed=true;}
+  }
+  // 保留原中文释义，仅接受在原文之后追加的补充内容。
+  if(incoming.meaning?.startsWith(old.meaning+'\n')&&incoming.meaning!==old.meaning){old.meaning=incoming.meaning;changed=true;}
   // 中英文例句必须对应，不能把另一条例句的翻译补到已有英文上。
-  if(!old.example?.trim()&&(!old.exampleZh?.trim()||old.exampleZh.trim()===incoming.exampleZh)){fill('example');fill('exampleZh');}
+  if(incoming.corePos&&incoming.coreMeaning&&incoming.example&&incoming.exampleZh){
+    // 经核心义清洗的词包可以修正已有例句，且中英文作为一对同步更新。
+    for(const k of ['example','exampleZh'])if(old[k]!==incoming[k]){old[k]=incoming[k];changed=true;}
+  }
+  else if(!old.example?.trim()&&(!old.exampleZh?.trim()||old.exampleZh.trim()===incoming.exampleZh)){fill('example');fill('exampleZh');}
   else if(old.example?.trim()===incoming.example)fill('exampleZh');
   return changed;
 }
@@ -264,7 +294,7 @@ async function exportData() {
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`cet6-backup-${day()}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);notify('备份已导出，请保存好 JSON 文件');
 }
 async function restoreData(data) {
-  if(data?.format!=='cet6-backup'||data.version!==1||!Array.isArray(data.words)||!Array.isArray(data.records)||!Array.isArray(data.meta))throw new Error('不是有效的 CET6 备份文件');
+  if(data?.format!=='cet6-backup'||data.version!==1||!Array.isArray(data.words)||!Array.isArray(data.records)||!Array.isArray(data.meta))throw new Error('不是有效的学习备份文件');
   const restored=data.words.map(w=>normalizeWord(w,true)), ids=new Set(restored.map(w=>w.word));if(ids.size!==restored.length)throw new Error('备份词库存在重复单词');
   validateRecords(data.records,ids);
   validateMeta(data.meta,ids);
