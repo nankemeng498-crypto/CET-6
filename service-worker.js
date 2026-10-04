@@ -1,5 +1,5 @@
-const CACHE = 'cet6-shell-v12';
-const FILES = ['./index.html', './style.css', './app.js', './sample-words.json', './manifest.json', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'];
+const CACHE = 'cet6-shell-v16';
+const FILES = ['./index.html', './style.css', './app.js', './sample-words.json', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 const urls = FILES.map(file => new URL(file, self.registration.scope).href);
 // 每个版本缓存一整套资源；安装时跳过 HTTP 旧缓存，避免新 HTML 配上旧 JS。
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(urls.map(url => new Request(url, {cache:'reload'})))).then(() => self.skipWaiting())));

@@ -4,7 +4,12 @@
 .gesture-surface{touch-action:none}
 .word-link span{overflow-wrap:anywhere}
 .phonetic,.answer,.detail-info{overflow-wrap:anywhere}.detail-info>div{min-width:0}
+.word-card .phonetic{margin-bottom:6px}.word-pos{font-size:14px;color:var(--muted);overflow-wrap:anywhere;margin:4px 0 8px}.importance{display:flex;justify-content:center;align-items:center;flex-wrap:wrap;gap:8px;margin:10px 0 18px;color:var(--green)}.importance>span{letter-spacing:2px;font-size:17px}.importance small{font-size:11px;color:var(--muted);letter-spacing:0}.meaning-line{margin:0 0 8px;white-space:pre-wrap}.meaning-line:last-child{margin-bottom:0}.answer .meaning{font-size:19px;line-height:1.65}.answer .example{margin-top:20px;line-height:1.7}.answer .example-zh{font-size:15px;line-height:1.7}.word-card.revealed>div{min-width:0}
 button{touch-action:manipulation}.setting label{min-height:48px}
 .brand{padding-top:calc(26px + env(safe-area-inset-top))}
 @media(max-width:430px){.brand{padding-top:calc(20px + env(safe-area-inset-top))}}
 @media(max-height:500px) and (orientation:landscape){.brand{padding-top:calc(8px + env(safe-area-inset-top))}}
+.dictionary-definition{margin-top:20px}.dictionary-definition .example{white-space:pre-line;overflow-wrap:anywhere}
+
+/* 词书名称比掌握等级长，窄屏允许换行，避免选择项截断。 */
+.setting .book-choice{flex-wrap:wrap}#active-book{max-width:100%}
